@@ -87,7 +87,8 @@ turns archive posts into Backfill.
 Pick rule that worked: **at most 3 posts; while archive posts remain, at most 2 new plus at least
 1 archive post, oldest first.** A weekly newsletter on a blog that publishes irregularly would
 otherwise go out empty, and the archive gets a second life. Never pick a post the ledger already
-mailed. Skipping = set status to Skipped.
+mailed. Skipping = set status to Skipped. When 1 post or fewer is available, refill up to 3 with
+the most visited posts of the last 30 days (analytics), skipping posts mailed in the last 8 issues.
 
 ## 5. Issue template
 
@@ -144,6 +145,11 @@ ledger → queue update. Rails, each with a test:
   `unsubscribed` to false. Look the contact up first and only create on 404.
 - Schedule: one daily job at the send hour; the weekday decides the action (preview the day
   before, send, follow-up report two days later, retry the day after), all inside one ISO week.
+- **Run it in the cloud, not on a laptop.** The reference build started as a Python job on a Mac and
+  moved to a Cloudflare Worker cron so the weekly send does not depend on a laptop being awake. Cron
+  triggers are UTC: schedule both possible UTC hours and let the code check the local time, so
+  daylight saving can't shift the send. State (ledger, flags, lock) lives in KV. Port with a
+  **golden render test**: the old and new renderer must produce byte-identical HTML for fixed inputs.
 
 ## 8. Numbers: Resend, Slack, PostHog
 
@@ -156,7 +162,10 @@ ledger → queue update. Rails, each with a test:
 - PostHog: UTM `utm_source=newsletter&utm_medium=email&utm_campaign=nl-<n>&utm_content=<slug>` on
   every link to your own site; capture `newsletter_issue_sent` (plus a project annotation, so traffic
   spikes explain themselves) and `newsletter_issue_stats`. The star rating links land on your site
-  with `nl_feedback=1..5`, so ratings arrive as pageviews you can count.
+  with `nl_feedback=1..5`, so ratings arrive as pageviews you can count. Mail scanners "click"
+  every link at delivery, so count ratings only from JS-executed pageviews, one per person per issue,
+  and drop anyone who hit 3+ star values within a minute. Report click % raw and without scanner
+  bursts (3+ distinct links within 10 s of delivery).
 - Resend to non-openers is a manual command with rails: at least 48 h after the send, recipient
   lists must match Resend's totals, exclude openers, clickers, unsubscribed, bounced and complained,
   skip if more than 85 % look like non-openers (open tracking is broken then, not your readers),
