@@ -47,7 +47,7 @@ code. Works with any coding agent that reads Markdown; the file is written as a 
 
 | File | What it carries |
 |---|---|
-| `SKILL.md` | The playbook: vendor and unsubscribe isolation, DNS, contacts and language split, content queue, issue template, send job, analytics, warm-up and go-live |
+| `SKILL.md` | The playbook: vendor and unsubscribe isolation, DNS, contacts and language split, content queue, issue template, send job, analytics, clicks to your CRM and follow-up queues, warm-up and go-live |
 | `references/resend-traps.md` | 12 Resend API behaviours checked live, plus one Cloudflare trap. Some fail silently, like the metrics call that returns zeros |
 | `references/language-switch.md` | The signed-token language button, Python + TypeScript, and why GET may never switch anything |
 | `references/safety-rails.md` | The rails that make an unattended weekly send safe for an AI agent to change |

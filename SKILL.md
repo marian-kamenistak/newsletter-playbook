@@ -94,12 +94,22 @@ the most visited posts of the last 30 days (analytics), skipping posts mailed in
 
 - Take brand tokens from the site's CSS (accent colour, display font, mono font).
 - Layout: neutral page background → header card (round photo, newsletter name, `☕ 2026 W47 ·
-  tagline`, brand logo top right) → one rounded card per post (image, number badge, archive tag,
-  reading time, title with an ↗ arrow, one-sentence teaser ≤ 160 characters, **bold** key words) →
-  one offer card (a random card read live from the homepage, with a static fallback) → two
-  side-by-side cards: "meet me for a coffee" and the next event read live from your event page
-  (they stack on phones) → end card (language switch button, 1–5 star rating links, forward line) →
-  footer with the **only** unsubscribe link.
+  tagline`, brand logo on the right, vertically centred) → one white rounded card per post (image,
+  number badge, archive tag, reading time, a big serif title with an ↗ arrow, one-sentence teaser
+  ≤ 160 characters, **bold** key words) → one offer card (a random card read live from the
+  homepage, with a static fallback) → two side-by-side cards: "meet me for a coffee" and the next
+  event read live from your event page (they stack on phones) → end card (language switch button,
+  1–5 star rating links, forward line) → footer with the **only** unsubscribe link.
+- No intro paragraph in the header. The posts carry the context, and readers skip the paragraph
+  anyway. Put the intro line in the preheader (`preview_text`), where the inbox shows it.
+- The posts are the highlight. Offer, meet and end cards sit on the page grey with a thin border,
+  not on white and not with an accent border, so the eye goes to the posts first.
+- Give it air: 32 px between cards, 36–40 px padding inside a card (about 24 px on phones), body
+  text 16–17 px at line height 1.7, post titles about 30 px bold (26 px on phones). The goal is a
+  newsletter people can read in two minutes.
+- Change the template only with a check: regenerate the golden render fixtures, read their diff
+  (only the lines you meant may change), screenshot at desktop and phone width, then send a dry run
+  to the test segment and read it in a real inbox.
 - Name issues by ISO week (`2026 W47`) in the header and the subject. Numbers like `#001` make a
   new newsletter look new.
 - Write in first person. Arrows, not "Read more" buttons.
@@ -119,8 +129,8 @@ open every link in a mail at delivery, so a switching GET would flip people who 
 
 ## 6. Copy generation with an LLM
 
-Per issue the LLM writes topics for the subject, one intro line and one teaser per post, returned
-as JSON. Validate lengths, banned words, no em dash; on any failure fall back to plain copy and
+Per issue the LLM writes topics for the subject, one intro line (it becomes the preheader) and one
+teaser per post, returned as JSON. Validate lengths, banned words, no em dash; on any failure fall back to plain copy and
 still send. A newsletter that goes out with plain copy beats one that misses its day.
 
 If you call Claude Code (`claude -p`) from a scheduled job, unset `ANTHROPIC_API_KEY` for that
@@ -150,6 +160,8 @@ ledger → queue update. Rails, each with a test:
   triggers are UTC: schedule both possible UTC hours and let the code check the local time, so
   daylight saving can't shift the send. State (ledger, flags, lock) lives in KV. Port with a
   **golden render test**: the old and new renderer must produce byte-identical HTML for fixed inputs.
+  After the port, the fixtures are the new renderer's own output, and every intended template change
+  regenerates them; the fixture diff is the design review.
 
 ## 8. Numbers: Resend, Slack, PostHog
 
@@ -171,10 +183,58 @@ ledger → queue update. Rails, each with a test:
   skip if more than 85 % look like non-openers (open tracking is broken then, not your readers),
   fill a resend segment and check it by set equality before sending.
 
+- **Clicks go to your CRM, per person, within a minute.** The Resend webhook already tells you who
+  clicked which link. Give every button its own `utm_content` (each post, the offer card, the
+  coffee card, the event, the stars, forward), or you cannot tell the clicks apart. For each real
+  click (not a scanner burst, not within 10 s of delivery, not a dry run, not unsubscribe), upsert
+  the person by email in the CRM and keep one entry per reader on an engagement list: stage,
+  intent (high for the offer, coffee and event cards; medium for a post; low for stars and
+  forward; keep the highest), last click, issue, click count, language. Post one line per click
+  in a Slack channel of its own. A CRM error must never fail the webhook, or Resend retries and
+  you count the click twice.
+
+### 8b. Follow-up queues
+
+A click is a signal, and each kind of signal gets its own follow-up. Never one email per clicked
+post: that reads like tracking. The webhook sets the queue on the reader's CRM entry at click
+time; a daily job on working days does the follow-up.
+
+| Queue | Trigger | Action | Stops |
+|---|---|---|---|
+| Mentoring (your offer) | offer card | next working day: a personal note with one question about their situation and a link to a free intro call; no reply in 5 days → one LinkedIn note | reply, booking, 2 touches |
+| Coffee | coffee card | next working day: coffee at your office or online, with your booking link; same LinkedIn second touch | reply, booking, 2 touches |
+| Event | event card | 48 h later, read the event's guest list: registered → mark it, send nothing; not registered → one "your seat is waiting" mail 5 days before | registration or event date |
+| Topic | 2+ clicked posts on one topic, or 3+ clicks over 2+ issues | one helpful note on that topic plus the post's own next step | one per topic per 90 days |
+| B2B | a company-level post (fractional, consulting, org design) from someone at a company of 50+ | a short business note instead of the personal offer | reply, one touch |
+| Advocates | 5 stars or forward | a weekly thank-you; every second one asks for a one-line quote | one per 90 days |
+
+Rules we run with:
+
+- One personal mail per person per 30 days, across everything you send, not only the newsletter.
+  If your outreach tool applies that pause only to cold mail, check it in the job yourself.
+- One touch per person per run, in a fixed priority (B2B, offer, coffee, event, topic, advocates).
+- Current clients and open deals get no mail from the job, only a Slack line for you.
+- Every mail goes through your normal one-to-one sender with its suppression list and duplicate
+  guard, from your personal address, plain text, no tracking pixel. Log it in the CRM.
+- The copy is written by an LLM per person and checked hard before sending: greeting kept, link
+  present, word cap, no em dash, nothing that says "I saw you click". A copy that fails the check
+  is not sent.
+
+What surprised us in the dry runs:
+
+- Czech copy came back without diacritics once. The check now refuses Czech text with fewer than
+  three accented letters.
+- Asked for a thank-you, the model promised future topics nobody had planned. Tell it in the
+  prompt not to name future topics, numbers or events.
+- A guest list status of "invited" does not mean registered. Count only approved, pending and
+  waitlist.
+- Read post tags from the live RSS feed, not from a local checkout of the site. Ours lagged the
+  live site by two posts.
+
 ## 9. Warm-up and go-live
 
 - Pick the send day from data: count the newsletters in your own inbox by weekday, and your blog
-  readers by weekday and hour. Ours: Wednesday 12:00 Prague time.
+  readers by weekday and hour. Ours: Wednesday 11:18 Prague time.
 - First issue to a large imported list: most engaged first, split over 3 days (700 / 1,000 / rest)
   inside the same ISO week.
 - Go-live checklist, each with the owner's yes: plan paid, import done, dry run read in a real
@@ -191,9 +251,10 @@ ledger → queue update. Rails, each with a test:
    re-permission mail.
 5. Google Postmaster Tools for the sending domain; an inbox-placement test before issue 1.
 6. Welcome automation, triggered by a custom event from the signup endpoint.
-7. Resend webhooks → PostHog per person (verify the Svix signature), so opens and clicks join site
-   visits for retargeting audiences.
-8. `preview_text` (the preheader) is accepted on broadcast create though not documented. Set it.
+7. Built since: Resend webhooks → PostHog per person (Svix signature verified) and clicks → CRM with
+   follow-up queues (sections 8 and 8b). Still open: feeding clickers into ad audiences.
+8. Built since: `preview_text` (the preheader) is accepted on broadcast create though not
+   documented. We fill it with the intro line.
 9. Resend has no subject A/B. Alternate subject styles week to week and compare opens.
 
 Read next: `references/resend-traps.md`, `references/language-switch.md`,
